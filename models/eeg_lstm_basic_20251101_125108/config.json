@@ -1,0 +1,17 @@
+{
+  "name": "eeg_lstm_basic",
+  "framework": "pytorch",
+  "architecture": "lstm",
+  "input_features": [
+    "eeg"
+  ],
+  "hidden_size": 128,
+  "num_layers": 2,
+  "dropout_rate": 0.3,
+  "sequence_length": 50,
+  "batch_size": 8,
+  "learning_rate": 0.001,
+  "max_epochs": 50,
+  "use_gpu": true,
+  "description": "LSTM using only EEG data"
+}

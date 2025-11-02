@@ -1,0 +1,181 @@
+# ===== SENSITIVE FILES - NEVER COMMIT =====
+# Configuration files with API keys and secrets
+config/app_config.yaml
+config/eeg_config.yaml
+configure_eeg.py
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Credentials and keys
+*secret*
+*credentials*
+*_key.txt
+*.pem
+*.key
+*.cert
+
+# ===== PYTHON =====
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# ===== DATA FILES =====
+# Generated data
+data/*.h5
+data/*.hdf5
+data/*.json
+data/*.csv
+data/*.npz
+data/session_*
+
+# Test data (keep structure, not content)
+test_data/*.h5
+test_data/*.hdf5
+test_data/*.json
+
+# ===== MODELS =====
+# Trained models (large files)
+models/**/*.pth
+models/**/*.pt
+models/**/*.h5
+models/**/*.pkl
+models/**/*.ckpt
+models/**/model.pth
+best_consciousness_model_pytorch.pth
+
+# Keep model registry and config files
+!models/model_registry.json
+!models/**/config.json
+!models/.gitkeep
+!models/README.md
+
+# ===== LOGS =====
+# Log files
+*.log
+logs/
+*.log.*
+
+# ===== IDE / EDITORS =====
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# Spyder
+.spyderproject
+.spyproject
+
+# ===== OS FILES =====
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ===== PROJECT SPECIFIC =====
+# Conversation logs and planning docs (keep if you want history)
+gpt-convo.txt
+consensus.txt
+
+# Temporary test files
+test_*.py
+!tests/test_*.py  # Keep actual test files in tests/ directory
+final_*.py
+verify_*.py
+demo_*.py
+check_*.py
+analyze_*.py
+
+# Documentation drafts (optional - uncomment to ignore)
+# *_COMPLETE.md
+# *_IMPLEMENTATION.md
+# *_FEATURES.md
+# *_FIXES.md
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*.swo
+
+# ===== HARDWARE SPECIFIC =====
+# Device-specific configs (these contain device paths that vary by machine)
+# Uncomment if you want to ignore:
+# config/hardware_config.yaml
