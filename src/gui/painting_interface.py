@@ -1911,12 +1911,17 @@ Description: {config.get('description', 'No description available')}"""
         self.color_button.setStyleSheet(f"background-color: {hex_color}")
         
         # Update button highlighting
-        for btn in self.color_buttons.values():
-            btn.setStyleSheet(btn.styleSheet().replace("border: 3px solid #000;", "border: 2px solid #333;"))
+        for value in self.color_buttons.values():
+            # Handle both button objects and (hex_color, btn) tuples
+            btn = value[1] if isinstance(value, tuple) else value
+            if hasattr(btn, 'setStyleSheet'):
+                btn.setStyleSheet(btn.styleSheet().replace("border: 3px solid #000;", "border: 2px solid #333;"))
         
         # Highlight selected color button
-        for name, btn in self.color_buttons.items():
-            if hex_color.upper() in btn.styleSheet().upper():
+        for name, value in self.color_buttons.items():
+            # Handle both button objects and (hex_color, btn) tuples
+            btn = value[1] if isinstance(value, tuple) else value
+            if hasattr(btn, 'styleSheet') and hex_color.upper() in btn.styleSheet().upper():
                 btn.setStyleSheet(btn.styleSheet().replace("border: 2px solid #333;", "border: 3px solid #000;"))
                 break
             
