@@ -72,12 +72,13 @@ def check_secret_content():
     for pattern in secret_patterns:
         code, stdout, _ = run_git_command(f'git grep -i "{pattern}"')
         if code == 0 and stdout.strip():
-            # Exclude example files and documentation
+            # Exclude example files, documentation, and the security check script itself
             lines = stdout.strip().split('\n')
             real_issues = [
                 line for line in lines 
                 if 'example' not in line.lower() 
                 and '.md' not in line.lower()
+                and 'security_check.py' not in line.lower()
             ]
             if real_issues:
                 issues.append(f"❌ FOUND SECRET: {pattern[:10]}...")
