@@ -17,17 +17,17 @@
       "use_gpu": true,
       "description": "LSTM using only EEG data"
     },
-    "training_time": "2025-11-01T12:51:08.564532",
-    "final_loss": 0.06679663587361574,
-    "final_val_loss": 1.045402792096138,
-    "total_epochs": 12,
-    "training_samples": 2,
-    "model_path": "models\\eeg_lstm_basic_20251101_125108",
+    "training_time": "2025-11-01T21:20:12.032300",
+    "final_loss": 1.0003904938697814,
+    "final_val_loss": 0.9926426792144776,
+    "total_epochs": 50,
+    "training_samples": 8,
+    "model_path": "models\\eeg_lstm_basic_20251101_212012",
     "framework_version": "2.6.0+cu124",
     "gpu_used": true,
     "performance_metrics": {
-      "training_time_seconds": 3.967402219772339,
-      "epochs_per_second": 3.0246492125743165
+      "training_time_seconds": 13.677706956863403,
+      "epochs_per_second": 3.6555835095524003
     }
   }
 }

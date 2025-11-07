@@ -1620,7 +1620,15 @@ class ModelTrainer:
             
     def predict(self, rng_data: np.ndarray, eeg_data: np.ndarray = None, 
                mode: int = 1) -> Dict[str, np.ndarray]:
-        """Make predictions using trained models"""
+        """Make predictions using trained models
+        
+        Note: Variety should emerge from model architecture (dropout, VAE, etc.)
+        not from post-processing noise. If predictions are too similar, the issue
+        is likely:
+        - Model overfitting (needs regularization, more data, or dropout)
+        - Deterministic architecture (should use VAE or probabilistic outputs)
+        - Training on limited/repetitive data
+        """
         
         model_key = f'mode{mode}'
         if model_key not in self.models:
@@ -1638,6 +1646,10 @@ class ModelTrainer:
             input_data = input_data.reshape(1, -1, input_data.shape[-1])
             
         # Make prediction
+        # TODO: For variety, model should have:
+        # - Dropout enabled at inference (training=True in Keras/PyTorch)
+        # - VAE latent sampling
+        # - Mixture Density Network outputs
         predictions = self.models[model_key].predict(input_data)
         
         # Return single prediction (remove batch dimension)

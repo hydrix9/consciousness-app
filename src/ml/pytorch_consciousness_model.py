@@ -63,7 +63,8 @@ class PyTorchConsciousnessModel(nn.Module):
                 nn.Linear(prev_dim, dim * 2),
                 nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(dim * 2, dim)
+                nn.Linear(dim * 2, dim),
+                nn.Sigmoid()  # Constrain outputs to [0, 1] range to prevent mode collapse
             )
     
     def forward(self, x):
@@ -259,16 +260,40 @@ class PyTorchConsciousnessTrainer:
         
         return history
     
-    def predict(self, X: np.ndarray) -> Dict[str, np.ndarray]:
-        """Make predictions on new data"""
-        self.model.eval()
-        X_tensor = torch.FloatTensor(X).to(self.device)
+    def predict(self, X: np.ndarray, mc_dropout: bool = True, n_samples: int = 1) -> Dict[str, np.ndarray]:
+        """Make predictions on new data
         
-        with torch.no_grad():
-            outputs = self.model(X_tensor)
-            predictions = {k: v.cpu().numpy() for k, v in outputs.items()}
+        Args:
+            X: Input data
+            mc_dropout: If True, keeps dropout enabled for Monte Carlo sampling (generates variety)
+            n_samples: Number of stochastic forward passes (only used if mc_dropout=True)
         
-        return predictions
+        Returns:
+            Dictionary of predictions (averaged over n_samples if mc_dropout=True)
+        """
+        if not mc_dropout:
+            # Standard deterministic inference (dropout disabled)
+            self.model.eval()
+            X_tensor = torch.FloatTensor(X).to(self.device)
+            
+            with torch.no_grad():
+                outputs = self.model(X_tensor)
+                predictions = {k: v.cpu().numpy() for k, v in outputs.items()}
+            
+            return predictions
+        else:
+            # Monte Carlo Dropout: keep dropout enabled for stochastic predictions
+            # This creates natural variety - different predictions each time!
+            self.model.train()  # Keeps dropout layers active
+            X_tensor = torch.FloatTensor(X).to(self.device)
+            
+            # Make single stochastic forward pass (with dropout active)
+            # No gradient computation needed
+            with torch.no_grad():
+                outputs = self.model(X_tensor)
+                predictions = {k: v.cpu().numpy() for k, v in outputs.items()}
+            
+            return predictions
     
     def save_model(self, filepath: str):
         """Save the trained model"""

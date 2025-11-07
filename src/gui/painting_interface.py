@@ -133,6 +133,12 @@ class PaintCanvas(QWidget):
         self.show_dial_visualization = False  # Toggle for showing dial overlay
         self.current_stroke_points = []  # Points in the current stroke
         
+        # Fade to black effect
+        self.fade_timer = QTimer(self)
+        self.fade_timer.timeout.connect(self._apply_fade_effect)
+        self.fade_timer.start(50)  # Apply fade every 50ms (20 FPS)
+        self.fade_alpha = 8  # Alpha value for fade overlay (higher = faster fade)
+        
         # Ensure the widget supports alpha blending
         self.setAttribute(Qt.WA_TranslucentBackground, False)  # We want opaque background
         self.setAutoFillBackground(True)
@@ -398,6 +404,24 @@ class PaintCanvas(QWidget):
             
             self.drawing_actions.append(action)
             self._call_action_callbacks(action)
+    
+    def _apply_fade_effect(self):
+        """Apply fade-to-black effect to the canvas"""
+        # Create a semi-transparent black overlay
+        painter = QPainter(self.pixmap)
+        
+        # Use Multiply composition mode to uniformly darken all colors
+        # Multiply mode: result = (canvas_color * overlay_color) / 255
+        # With a dark gray overlay, all RGB channels darken proportionally
+        painter.setCompositionMode(QPainter.CompositionMode_Multiply)
+        
+        # Fill with dark gray - multiplying by 0.97 darkens all colors by 3%
+        # RGB(247, 247, 247) = 97% brightness -> multiply effect darkens by 3%
+        fade_color = QColor(247, 247, 247, 255)  # ~97% gray for uniform darkening
+        painter.fillRect(self.pixmap.rect(), fade_color)
+        
+        painter.end()
+        self.update()
             
     def paintEvent(self, event):
         """Handle paint events"""
@@ -701,20 +725,18 @@ class ConsciousnessMainWindow(QMainWindow):
         
         # Quick color palette
         color_palette_layout = QVBoxLayout()
-        color_palette_layout.addWidget(QLabel("Colors (Press 1-8):"))
+        color_palette_layout.addWidget(QLabel("Colors (Press 1-6):"))
         
         colors_row_layout = QHBoxLayout()
         self.color_buttons = {}
-        # Simplified palette: White, Purple, Blue, Cyan, Gold, Red, Indigo, Green
+        # Simplified palette: White, Green, Blue, Gold, Red, Indigo
         colors = [
             ("Pure White", "#FFFFFF", "1"),          # White for dial visualization
-            ("Ethereal Violet", "#9D4EDD", "2"),     # Deep mystical purple
+            ("Plasma Green", "#39FF14", "2"),        # Electric supernatural green
             ("Cosmic Blue", "#4169E1", "3"),         # Royal blue (simplified from dark blue)
-            ("Astral Cyan", "#00F5FF", "4"),         # Bright ethereal cyan
-            ("Mystic Gold", "#FFD700", "5"),         # Golden divine light
-            ("Crimson Aura", "#DC143C", "6"),        # Deep occult red
-            ("Shadow Indigo", "#4B0082", "7"),       # Dark mystical indigo
-            ("Plasma Green", "#39FF14", "8")         # Electric supernatural green
+            ("Mystic Gold", "#FFD700", "4"),         # Golden divine light
+            ("Crimson Aura", "#DC143C", "5"),        # Deep occult red
+            ("Shadow Indigo", "#4B0082", "6")        # Dark mystical indigo
         ]
         
         for idx, (name, hex_color, key) in enumerate(colors):
@@ -1399,17 +1421,28 @@ class ConsciousnessMainWindow(QMainWindow):
                 with open(registry_path, 'r') as f:
                     registry = json.load(f)
                 
+                valid_models = 0
                 for model_name, metadata in registry.items():
-                    # Format display name with key info
-                    arch = metadata.get('variant_config', {}).get('architecture', 'unknown')
-                    features = metadata.get('variant_config', {}).get('input_features', [])
-                    loss = metadata.get('final_val_loss', 0)
-                    display_name = f"{model_name} ({arch}) - Loss: {loss:.3f}"
-                    self.model_selector.addItem(display_name, model_name)
+                    model_path = metadata.get('model_path', '')
                     
-                self.log_message(f"🔄 Loaded {len(registry)} available models")
+                    # Only add models whose files actually exist
+                    if os.path.exists(model_path):
+                        # Format display name with key info
+                        arch = metadata.get('variant_config', {}).get('architecture', 'unknown')
+                        features = metadata.get('variant_config', {}).get('input_features', [])
+                        loss = metadata.get('final_val_loss', 0)
+                        display_name = f"{model_name} ({arch}) - Loss: {loss:.3f}"
+                        self.model_selector.addItem(display_name, model_name)
+                        valid_models += 1
+                    else:
+                        self.log_message(f"⚠️ Skipping {model_name}: file not found at {model_path}")
+                    
+                if valid_models > 0:
+                    self.log_message(f"🔄 Loaded {valid_models} available models")
+                else:
+                    self.log_message("⚠️ No valid model files found. Please train a model first.")
             else:
-                self.log_message("⚠️ No model registry found")
+                self.log_message("⚠️ No model registry found. Please train a model first.")
                 
         except Exception as e:
             self.log_message(f"⚠️ Error loading model list: {e}")
@@ -1471,6 +1504,11 @@ Description: {config.get('description', 'No description available')}"""
             
             # Load model registry for metadata
             registry_path = os.path.join(os.path.dirname(__file__), "..", "..", "models", "model_registry.json")
+            
+            # Check if registry exists
+            if not os.path.exists(registry_path):
+                raise Exception("Model registry not found. Please train a model first.")
+            
             with open(registry_path, 'r') as f:
                 registry = json.load(f)
             
@@ -1480,37 +1518,221 @@ Description: {config.get('description', 'No description available')}"""
             self.model_metadata = registry[model_name]
             model_path = self.model_metadata['model_path']
             
+            # CHECK IF MODEL FILE ACTUALLY EXISTS
+            if not os.path.exists(model_path):
+                raise Exception(f"Model file not found: {model_path}\n\nThe model is in the registry but the file doesn't exist.\nPlease retrain this model.")
+            
             # Import model loading functionality
-            from ml.model_manager import ModelManager
-            from ml.advanced_inference import AdvancedInferenceEngine, MultiModelInferenceConfig
+            from ml.training_pipeline import ModelTrainer
             
-            # Load the model
-            model_manager = ModelManager()
-            self.loaded_model = model_manager.load_model_from_disk(model_path)
+            # Create trainer to load the model properly
+            trainer = ModelTrainer()
             
-            # Create inference engine
-            inference_config = MultiModelInferenceConfig(
-                model_configs=[{
-                    'model': self.loaded_model,
-                    'metadata': self.model_metadata,
-                    'weight': 1.0
-                }],
-                prediction_rate=self.inference_rate_slider.value(),
-                sequence_length=self.model_metadata.get('variant_config', {}).get('sequence_length', 50),
-                real_time=True
-            )
+            # Determine model type from metadata
+            model_type = self.model_metadata.get('variant_config', {}).get('architecture', 'pytorch')
             
-            self.inference_engine = AdvancedInferenceEngine(inference_config)
+            # Load the model using the trainer's load mechanism
+            if model_type == 'pytorch' or 'pytorch' in model_path.lower():
+                from ml.pytorch_consciousness_model import PyTorchConsciousnessTrainer
+                import torch
+                
+                # Get model config from metadata
+                variant_config = self.model_metadata.get('variant_config', {})
+                input_features = variant_config.get('input_features', ['rng'])
+                
+                # Calculate input dimension
+                input_dim = 0
+                if 'rng' in input_features:
+                    input_dim += 8
+                if 'eeg' in input_features:
+                    input_dim += 14
+                
+                output_dims = {
+                    'colors': 3,
+                    'dials': 8,
+                    'curves': 3,
+                    'positions': 2
+                }
+                
+                hidden_dims = variant_config.get('hidden_dims', [512, 256, 128])
+                
+                # Create PyTorch model
+                from ml.pytorch_consciousness_model import PyTorchConsciousnessModel
+                pytorch_model = PyTorchConsciousnessModel(
+                    input_dim=input_dim,
+                    output_dims=output_dims,
+                    hidden_dims=hidden_dims
+                )
+                
+                # Create trainer wrapper
+                self.loaded_model = PyTorchConsciousnessTrainer(pytorch_model)
+                
+                # Load weights
+                checkpoint = torch.load(model_path, map_location='cpu')
+                if 'model_state_dict' in checkpoint:
+                    self.loaded_model.model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    self.loaded_model.model.load_state_dict(checkpoint)
+                
+                self.loaded_model.model.eval()
+                
+                self.log_message(f"✅ PyTorch model loaded from {model_path}")
+                
+            elif model_type in ['lstm', 'gru', 'transformer', 'cnn_lstm']:
+                # Load LSTM/GRU/Transformer/CNN-LSTM models from MultiModelTrainer
+                import torch
+                import torch.nn as nn
+                
+                # Get model config from metadata
+                variant_config = self.model_metadata.get('variant_config', {})
+                input_features = variant_config.get('input_features', ['rng'])
+                hidden_size = variant_config.get('hidden_size', 128)
+                num_layers = variant_config.get('num_layers', 2)
+                dropout_rate = variant_config.get('dropout_rate', 0.3)
+                
+                # Calculate input dimension
+                input_size = 0
+                if 'rng' in input_features:
+                    input_size += 8
+                if 'eeg' in input_features:
+                    input_size += 32  # EEG has 32 features in multi_model_trainer
+                
+                # Recreate the model architecture (from multi_model_trainer.py)
+                if model_type == 'lstm':
+                    class LSTMModel(nn.Module):
+                        def __init__(self, input_size, hidden_size, num_layers, dropout_rate):
+                            super().__init__()
+                            self.lstm = nn.LSTM(input_size, hidden_size, num_layers, 
+                                              dropout=dropout_rate, batch_first=True)
+                            self.fc = nn.Linear(hidden_size, 1)
+                            self.sigmoid = nn.Sigmoid()
+                            
+                        def forward(self, x):
+                            out, _ = self.lstm(x)
+                            out = self.fc(out[:, -1, :])
+                            out = self.sigmoid(out)
+                            return out
+                    
+                    model = LSTMModel(input_size, hidden_size, num_layers, dropout_rate)
+                    
+                elif model_type == 'gru':
+                    class GRUModel(nn.Module):
+                        def __init__(self, input_size, hidden_size, num_layers, dropout_rate):
+                            super().__init__()
+                            self.gru = nn.GRU(input_size, hidden_size, num_layers,
+                                            dropout=dropout_rate, batch_first=True)
+                            self.fc = nn.Linear(hidden_size, 1)
+                            self.sigmoid = nn.Sigmoid()
+                            
+                        def forward(self, x):
+                            out, _ = self.gru(x)
+                            out = self.fc(out[:, -1, :])
+                            out = self.sigmoid(out)
+                            return out
+                    
+                    model = GRUModel(input_size, hidden_size, num_layers, dropout_rate)
+                    
+                elif model_type == 'transformer':
+                    class TransformerModel(nn.Module):
+                        def __init__(self, input_size, hidden_size, num_layers, dropout_rate):
+                            super().__init__()
+                            encoder_layer = nn.TransformerEncoderLayer(
+                                d_model=input_size, nhead=min(8, input_size), 
+                                dim_feedforward=hidden_size, dropout=dropout_rate,
+                                batch_first=True
+                            )
+                            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers)
+                            self.fc = nn.Linear(input_size, 1)
+                            self.sigmoid = nn.Sigmoid()
+                            
+                        def forward(self, x):
+                            out = self.transformer(x)
+                            out = self.fc(out[:, -1, :])
+                            out = self.sigmoid(out)
+                            return out
+                    
+                    model = TransformerModel(input_size, hidden_size, num_layers, dropout_rate)
+                    
+                elif model_type == 'cnn_lstm':
+                    class CNNLSTMModel(nn.Module):
+                        def __init__(self, input_size, hidden_size, num_layers, dropout_rate):
+                            super().__init__()
+                            self.conv1d = nn.Conv1d(input_size, hidden_size//2, kernel_size=3, padding=1)
+                            self.lstm = nn.LSTM(hidden_size//2, hidden_size, num_layers,
+                                              dropout=dropout_rate, batch_first=True)
+                            self.fc = nn.Linear(hidden_size, 1)
+                            self.sigmoid = nn.Sigmoid()
+                            
+                        def forward(self, x):
+                            x = x.transpose(1, 2)
+                            x = torch.relu(self.conv1d(x))
+                            x = x.transpose(1, 2)
+                            out, _ = self.lstm(x)
+                            out = self.fc(out[:, -1, :])
+                            out = self.sigmoid(out)
+                            return out
+                    
+                    model = CNNLSTMModel(input_size, hidden_size, num_layers, dropout_rate)
+                
+                # Load weights
+                model.load_state_dict(torch.load(os.path.join(model_path, 'model.pth'), 
+                                                 map_location='cpu', weights_only=True))
+                model.eval()
+                
+                # Create a simple wrapper for prediction
+                class SimplePredictorWrapper:
+                    def __init__(self, model, input_features):
+                        self.model = model
+                        self.input_features = input_features
+                        
+                    def predict(self, X, mc_dropout=False):
+                        """Predict single value from LSTM/GRU/etc model"""
+                        import torch
+                        import numpy as np
+                        
+                        with torch.no_grad():
+                            # X is already flattened (batch, sequence*features)
+                            # Need to reshape to (batch, sequence, features)
+                            sequence_length = 50  # Default from training
+                            
+                            if 'rng' in self.input_features and 'eeg' not in self.input_features:
+                                features = 8
+                            elif 'eeg' in self.input_features and 'rng' not in self.input_features:
+                                features = 32
+                            else:
+                                features = 40  # Both
+                            
+                            # Reshape flattened input
+                            X_reshaped = X.reshape(1, sequence_length, features)
+                            X_tensor = torch.FloatTensor(X_reshaped)
+                            
+                            # Get prediction (single value)
+                            pred = self.model(X_tensor)
+                            
+                            # Return as numpy array (not dict like PyTorch model)
+                            return pred.cpu().numpy()
+                
+                self.loaded_model = SimplePredictorWrapper(model, input_features)
+                
+                self.log_message(f"✅ {model_type.upper()} model loaded from {model_path}")
+                self.log_message(f"   Input: {input_size} features, Hidden: {hidden_size}, Layers: {num_layers}")
+                
+            else:
+                raise Exception(f"Unsupported model type: {model_type}")
             
-            # Set up inference timer
-            if not hasattr(self, 'inference_timer'):
-                self.inference_timer = QTimer()
-                self.inference_timer.timeout.connect(self.run_real_inference_cycle)
+            # Store model info for inference
+            self.inference_model_loaded = True
+            self.inference_model_type = model_type
             
-            # Start inference timer
+            # Set up REAL inference timer (separate from merged mode timer)
+            if not hasattr(self, 'real_inference_timer'):
+                self.real_inference_timer = QTimer()
+                self.real_inference_timer.timeout.connect(self.run_real_inference_cycle)
+            
+            # Start real inference timer
             rate_hz = self.inference_rate_slider.value()
             interval_ms = int(1000 / rate_hz)
-            self.inference_timer.start(interval_ms)
+            self.real_inference_timer.start(interval_ms)
             
             # Update UI state
             self.inference_active = True
@@ -1548,8 +1770,8 @@ Description: {config.get('description', 'No description available')}"""
     def stop_real_inference(self):
         """Stop real model inference"""
         try:
-            if hasattr(self, 'inference_timer'):
-                self.inference_timer.stop()
+            if hasattr(self, 'real_inference_timer'):
+                self.real_inference_timer.stop()
             
             if hasattr(self, 'inference_engine'):
                 del self.inference_engine
@@ -1587,7 +1809,12 @@ Description: {config.get('description', 'No description available')}"""
     def run_real_inference_cycle(self):
         """Run a real inference cycle using the loaded model"""
         try:
-            if not self.inference_active or not hasattr(self, 'inference_engine'):
+            # Check if inference is active AND model is loaded
+            if not self.inference_active:
+                return
+            
+            if not hasattr(self, 'loaded_model') or not hasattr(self, 'inference_model_loaded'):
+                self.log_message("⚠️ No model loaded - cannot run inference")
                 return
             
             # Collect recent data for inference
@@ -1597,8 +1824,37 @@ Description: {config.get('description', 'No description available')}"""
                 # Not enough data yet
                 return
             
-            # Run inference
-            prediction = self.inference_engine.predict(recent_data)
+            # Run inference using the loaded model
+            import numpy as np
+            
+            # Prepare input based on what features the model expects
+            input_features = self.model_metadata.get('variant_config', {}).get('input_features', ['rng'])
+            sequence_length = self.model_metadata.get('variant_config', {}).get('sequence_length', 50)
+            
+            # Build input array
+            input_parts = []
+            if 'rng' in input_features and 'rng' in recent_data:
+                input_parts.append(recent_data['rng'])
+            if 'eeg' in input_features and 'eeg' in recent_data:
+                input_parts.append(recent_data['eeg'])
+            
+            if not input_parts:
+                self.log_message("⚠️ No valid input data for inference")
+                return
+            
+            # Concatenate input features
+            if len(input_parts) == 1:
+                input_array = input_parts[0]
+            else:
+                input_array = np.concatenate(input_parts, axis=-1)
+            
+            # Flatten the sequence for the model: (batch, sequence*features)
+            # Model expects flattened input, not (batch, sequence, features)
+            batch_size = 1
+            flattened_input = input_array.reshape(batch_size, -1)
+            
+            # Make prediction
+            prediction = self.loaded_model.predict(flattened_input, mc_dropout=True)
             
             if prediction is not None:
                 self.prediction_count += 1
@@ -1606,6 +1862,11 @@ Description: {config.get('description', 'No description available')}"""
                 
                 # Process the real prediction
                 self.process_real_prediction(prediction)
+                
+        except Exception as e:
+            import traceback
+            self.log_message(f"⚠️ Error in real inference cycle: {e}")
+            traceback.print_exc()
                 
         except Exception as e:
             self.log_message(f"⚠️ Error in real inference cycle: {e}")
@@ -1616,19 +1877,69 @@ Description: {config.get('description', 'No description available')}"""
             sequence_length = self.model_metadata.get('variant_config', {}).get('sequence_length', 50)
             input_features = self.model_metadata.get('variant_config', {}).get('input_features', [])
             
-            # This is a simplified version - in reality you'd collect from the data streams
-            # For now, create synthetic data matching the expected input format
+            import numpy as np
             input_data = {}
             
             if 'rng' in input_features:
-                # Generate recent RNG-like data
-                import numpy as np
-                input_data['rng'] = np.random.rand(sequence_length, 8)  # 8 RNG channels
+                # Collect actual recent RNG data from the consciousness vector buffer
+                if len(self.consciousness_vectors) >= sequence_length:
+                    # Extract RNG data from recent consciousness vectors
+                    rng_sequence = []
+                    for vec in list(self.consciousness_vectors)[-sequence_length:]:
+                        if hasattr(vec, 'rng_data') and vec.rng_data is not None:
+                            rng_sequence.append(vec.rng_data[:8])  # Take first 8 channels
+                    
+                    if len(rng_sequence) == sequence_length:
+                        input_data['rng'] = np.array(rng_sequence)
+                    else:
+                        # Fallback: use varied synthetic data (not uniform random!)
+                        # Use time-varying patterns so each call gets different data
+                        t = time.time()
+                        base = np.random.rand(sequence_length, 8)
+                        # Add time-varying sinusoidal modulation for variety
+                        for i in range(sequence_length):
+                            phase = t + i * 0.1
+                            modulation = np.sin(phase + np.arange(8) * 0.5) * 0.3 + 0.5
+                            base[i] *= modulation
+                        input_data['rng'] = base
+                else:
+                    # Not enough vectors yet - generate time-varying synthetic data
+                    t = time.time()
+                    base = np.random.rand(sequence_length, 8)
+                    for i in range(sequence_length):
+                        phase = t + i * 0.1
+                        modulation = np.sin(phase + np.arange(8) * 0.5) * 0.3 + 0.5
+                        base[i] *= modulation
+                    input_data['rng'] = base
             
             if 'eeg' in input_features:
-                # Generate recent EEG-like data  
-                import numpy as np
-                input_data['eeg'] = np.random.rand(sequence_length, 14)  # 14 EEG channels
+                # Collect actual recent EEG data from the consciousness vector buffer
+                if len(self.consciousness_vectors) >= sequence_length:
+                    eeg_sequence = []
+                    for vec in list(self.consciousness_vectors)[-sequence_length:]:
+                        if hasattr(vec, 'eeg_data') and vec.eeg_data is not None:
+                            eeg_sequence.append(vec.eeg_data[:14])  # Take first 14 channels
+                    
+                    if len(eeg_sequence) == sequence_length:
+                        input_data['eeg'] = np.array(eeg_sequence)
+                    else:
+                        # Fallback: time-varying synthetic EEG data
+                        t = time.time()
+                        base = np.random.rand(sequence_length, 14)
+                        for i in range(sequence_length):
+                            phase = t + i * 0.15
+                            modulation = np.sin(phase + np.arange(14) * 0.3) * 0.4 + 0.5
+                            base[i] *= modulation
+                        input_data['eeg'] = base
+                else:
+                    # Not enough vectors - generate time-varying synthetic data
+                    t = time.time()
+                    base = np.random.rand(sequence_length, 14)
+                    for i in range(sequence_length):
+                        phase = t + i * 0.15
+                        modulation = np.sin(phase + np.arange(14) * 0.3) * 0.4 + 0.5
+                        base[i] *= modulation
+                    input_data['eeg'] = base
             
             return input_data
             
@@ -1639,26 +1950,100 @@ Description: {config.get('description', 'No description available')}"""
     def process_real_prediction(self, prediction):
         """Process real model predictions and draw them"""
         try:
-            # Extract prediction components
-            colors = prediction.get('colors', {})
-            positions = prediction.get('positions', {})
+            import numpy as np
             
-            # Convert to drawing coordinates
-            if 'r' in colors and 'g' in colors and 'b' in colors:
-                r = max(0, min(255, int(colors['r'] * 255)))
-                g = max(0, min(255, int(colors['g'] * 255)))
-                b = max(0, min(255, int(colors['b'] * 255)))
-            else:
-                # Fallback colors
-                r, g, b = 128, 128, 200
+            # Check which type of model we have:
+            # - PyTorchConsciousnessModel: outputs dict {'colors': [...], 'positions': [...]}
+            # - LSTM/GRU/etc: outputs single value or simple tensor
             
-            # Get position from prediction or use center with small random offset
-            if 'x' in positions and 'y' in positions:
-                x = int(positions['x'] * self.canvas.width())
-                y = int(positions['y'] * self.canvas.height())
+            if isinstance(prediction, dict) and 'colors' in prediction and 'positions' in prediction:
+                # ===== MULTI-OUTPUT MODEL (PyTorchConsciousnessModel) =====
+                colors_array = prediction.get('colors')
+                positions_array = prediction.get('positions')
+                
+                # Handle both array and dict formats for backwards compatibility
+                if isinstance(colors_array, np.ndarray):
+                    # Flatten to 1D if needed
+                    if len(colors_array.shape) > 1:
+                        colors_array = colors_array[0]
+                    
+                    # Extract RGB values (already in 0-1 range due to Sigmoid)
+                    r = max(0, min(255, int(colors_array[0] * 255)))
+                    g = max(0, min(255, int(colors_array[1] * 255)))
+                    b = max(0, min(255, int(colors_array[2] * 255)))
+                elif isinstance(colors_array, dict):
+                    # Old dict format
+                    r = max(0, min(255, int(colors_array.get('r', 0.5) * 255)))
+                    g = max(0, min(255, int(colors_array.get('g', 0.5) * 255)))
+                    b = max(0, min(255, int(colors_array.get('b', 0.5) * 255)))
+                else:
+                    # Fallback
+                    r, g, b = 128, 128, 200
+                
+                # Get position from prediction
+                if isinstance(positions_array, np.ndarray):
+                    # Flatten to 1D if needed
+                    if len(positions_array.shape) > 1:
+                        positions_array = positions_array[0]
+                    
+                    # Extract x, y (already in 0-1 range due to Sigmoid)
+                    x = int(positions_array[0] * self.canvas.width())
+                    y = int(positions_array[1] * self.canvas.height())
+                elif isinstance(positions_array, dict):
+                    # Old dict format
+                    x = int(positions_array.get('x', 0.5) * self.canvas.width())
+                    y = int(positions_array.get('y', 0.5) * self.canvas.height())
+                else:
+                    # Fallback to random position
+                    x = self.canvas.width() // 2 + random.randint(-100, 100)
+                    y = self.canvas.height() // 2 + random.randint(-100, 100)
+                    
             else:
-                x = self.canvas.width() // 2 + random.randint(-100, 100)
-                y = self.canvas.height() // 2 + random.randint(-100, 100)
+                # ===== SINGLE-OUTPUT MODEL (LSTM/GRU/Transformer/CNN-LSTM) =====
+                # These models only output 1 value - we need to creatively interpret it
+                
+                # Extract the single prediction value
+                if isinstance(prediction, np.ndarray):
+                    value = float(prediction.flatten()[0])
+                elif isinstance(prediction, (int, float)):
+                    value = float(prediction)
+                else:
+                    value = 0.5  # Fallback
+                
+                # Clamp to [0, 1] range (should already be from Sigmoid, but be safe)
+                value = max(0.0, min(1.0, value))
+                
+                # Generate VARIED colors and positions from the single value
+                # Use multiple strategies to avoid repetitive patterns:
+                
+                # Strategy 1: Use prediction count as a seed for variation
+                seed = self.prediction_count
+                
+                # Strategy 2: Use current layer/dimension as modulation
+                layer_mod = (self.current_layer + 1) / 3.0
+                dim_mod = self.pocket_dimension / 10.0
+                
+                # Strategy 3: Add controlled randomness (not pure random, influenced by value)
+                np.random.seed(int(value * 10000 + seed))
+                random_factor = np.random.rand()
+                
+                # Generate RGB using different combinations
+                # This ensures variety even with similar prediction values
+                r = max(0, min(255, int((value * 0.6 + random_factor * 0.3 + layer_mod * 0.1) * 255)))
+                g = max(0, min(255, int((value * 0.3 + (1-random_factor) * 0.5 + dim_mod * 0.2) * 255)))
+                b = max(0, min(255, int(((1-value) * 0.5 + random_factor * 0.4 + 0.1) * 255)))
+                
+                # Generate position with variation
+                # Use prediction value + randomness for X, complement for Y
+                np.random.seed(int(value * 20000 + seed + 100))
+                x_offset = np.random.rand() * 0.3 - 0.15  # ±15% variation
+                y_offset = np.random.rand() * 0.3 - 0.15
+                
+                x = int(max(0, min(1, value + x_offset)) * self.canvas.width())
+                y = int(max(0, min(1, (1 - value) + y_offset)) * self.canvas.height())
+                
+                # Reset random seed to avoid affecting other random operations
+                np.random.seed(None)
             
             # Draw the real prediction
             self.draw_real_inference_prediction(x, y, (r, g, b, 180))
@@ -1666,6 +2051,14 @@ Description: {config.get('description', 'No description available')}"""
             # Record the action if session is active
             if (hasattr(self, 'data_logger') and self.data_logger and 
                 self.session_active):
+                
+                # Convert numpy arrays to lists for JSON serialization
+                prediction_for_log = {}
+                for key, value in prediction.items():
+                    if isinstance(value, np.ndarray):
+                        prediction_for_log[key] = value.tolist()
+                    else:
+                        prediction_for_log[key] = value
                 
                 inference_action = DrawingAction(
                     timestamp=time.time(),
@@ -1678,7 +2071,7 @@ Description: {config.get('description', 'No description available')}"""
                     pocket_dimension=self.pocket_dimension,
                     metadata={
                         'model_name': self.model_selector.currentData(),
-                        'prediction_data': prediction,
+                        'prediction_data': prediction_for_log,
                         'inference_mode': 'real_model',
                         'prediction_count': self.prediction_count
                     }
@@ -1690,12 +2083,14 @@ Description: {config.get('description', 'No description available')}"""
             self.log_message(f"🧠 Real prediction: ({x},{y}) color=({r},{g},{b}) from {self.model_selector.currentData()}")
             
         except Exception as e:
+            import traceback
             self.log_message(f"⚠️ Error processing real prediction: {e}")
+            traceback.print_exc()
     
     def draw_real_inference_prediction(self, x, y, color):
         """Draw real inference prediction on canvas"""
         try:
-            painter = QPainter(self.canvas.layers[self.current_layer])
+            painter = QPainter(self.canvas.pixmap)
             
             r, g, b, alpha = color
             prediction_color = QColor(r, g, b, alpha)
@@ -1726,45 +2121,6 @@ Description: {config.get('description', 'No description available')}"""
             
         except Exception as e:
             self.log_message(f"⚠️ Error drawing real prediction: {e}")
-        
-        self.inference_rate_slider.valueChanged.connect(self.update_inference_rate)
-        
-        controls_layout.addLayout(rate_row)
-        layout.addWidget(controls_group)
-        
-        # Inference status
-        status_group = QGroupBox("Inference Status")
-        status_group.setStyleSheet("""
-            QGroupBox {
-                color: #87CEEB;
-                font-weight: bold;
-                border: 1px solid #4169E1;
-                border-radius: 5px;
-                margin-top: 6px;
-                padding-top: 8px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-        """)
-        status_layout = QVBoxLayout(status_group)
-        
-        self.inference_status_label = QLabel("Inference: Disabled")
-        self.inference_status_label.setStyleSheet("color: #FF6347; font-weight: bold; font-size: 11px;")
-        status_layout.addWidget(self.inference_status_label)
-        
-        self.recursive_sessions_label = QLabel("Recursive Sessions: 0")
-        self.recursive_sessions_label.setStyleSheet("color: #87CEEB; font-weight: bold; font-size: 11px;")
-        status_layout.addWidget(self.recursive_sessions_label)
-        
-        layout.addWidget(status_group)
-        
-        # Add stretch to push everything to the top
-        layout.addStretch()
-        
-        return tab
         
     def setup_timers(self):
         """Set up update timers"""
@@ -1822,7 +2178,8 @@ Description: {config.get('description', 'No description available')}"""
                         'eeg_device': 'EEG_Bridge' if self.eeg_bridge else 'None',
                         'mystical_field': 'Enabled' if hasattr(self, 'field_widget') and self.field_widget else 'Disabled',
                         'inference_mode': 'Enabled' if hasattr(self, 'inference_mode_enabled') and self.inference_mode_enabled else 'Disabled',
-                        'recursive_recording': 'Enabled' if hasattr(self, 'recursive_recording_checkbox') and self.recursive_recording_checkbox.isChecked() else 'Disabled'
+                        'recursive_recording': 'Enabled' if hasattr(self, 'recursive_recording_checkbox') and self.recursive_recording_checkbox.isChecked() else 'Disabled',
+                        'dial_visualization': 'Enabled' if self.canvas.show_dial_visualization else 'Disabled'
                     }
                 )
                 self.log_message(f"📊 Data logging started: {session_id}")
@@ -2396,12 +2753,12 @@ Description: {config.get('description', 'No description available')}"""
         try:
             # For now, create a simple mock inference system
             # This avoids complex model loading issues in merged mode
-            self.inference_engine = MockInferenceEngine()
+            self.merged_mode_inference_engine = MockInferenceEngine()
             
-            # Set up inference timer for regular predictions
-            if not hasattr(self, 'inference_timer'):
-                self.inference_timer = QTimer()
-                self.inference_timer.timeout.connect(self.run_inference_cycle)
+            # Set up MERGED MODE inference timer (separate from real inference timer)
+            if not hasattr(self, 'merged_mode_inference_timer'):
+                self.merged_mode_inference_timer = QTimer()
+                self.merged_mode_inference_timer.timeout.connect(self.run_merged_mode_inference_cycle)
             
             # Get inference rate from slider (default 5 Hz)
             inference_rate = getattr(self, 'inference_rate_slider', None)
@@ -2410,9 +2767,9 @@ Description: {config.get('description', 'No description available')}"""
             else:
                 rate_hz = 5  # Default 5 Hz
             
-            # Start inference timer
+            # Start merged mode inference timer
             interval_ms = int(1000 / rate_hz)  # Convert Hz to milliseconds
-            self.inference_timer.start(interval_ms)
+            self.merged_mode_inference_timer.start(interval_ms)
             
             self.log_message(f"🔧 Mock inference engine initialized (rate: {rate_hz} Hz)")
                 
@@ -2423,16 +2780,16 @@ Description: {config.get('description', 'No description available')}"""
     
     def stop_inference_components(self):
         """Stop inference components"""
-        if hasattr(self, 'inference_timer'):
-            self.inference_timer.stop()
-            self.log_message("⏹️ Inference timer stopped")
+        if hasattr(self, 'merged_mode_inference_timer'):
+            self.merged_mode_inference_timer.stop()
+            self.log_message("⏹️ Merged mode inference timer stopped")
             
-        if hasattr(self, 'inference_engine'):
+        if hasattr(self, 'merged_mode_inference_engine'):
             try:
-                self.inference_engine.stop()
-                self.log_message("🛑 Inference engine stopped")
+                self.merged_mode_inference_engine.stop()
+                self.log_message("🛑 Merged mode inference engine stopped")
             except Exception as e:
-                self.log_message(f"⚠️ Error stopping inference: {e}")
+                self.log_message(f"⚠️ Error stopping merged mode inference: {e}")
     
     def update_inference_rate(self, rate_hz):
         """Update the inference rate when slider changes"""
@@ -2441,40 +2798,63 @@ Description: {config.get('description', 'No description available')}"""
             if hasattr(self, 'inference_rate_label'):
                 self.inference_rate_label.setText(f"{rate_hz} Hz")
             
-            # Update timer interval if inference is active
-            if (hasattr(self, 'inference_timer') and 
+            # Update merged mode timer interval if inference is active
+            if (hasattr(self, 'merged_mode_inference_timer') and 
                 hasattr(self, 'inference_mode_enabled') and 
                 self.inference_mode_enabled):
                 
                 interval_ms = int(1000 / rate_hz)
-                self.inference_timer.setInterval(interval_ms)
-                self.log_message(f"🔧 Inference rate updated to {rate_hz} Hz")
+                self.merged_mode_inference_timer.setInterval(interval_ms)
+                self.log_message(f"🔧 Merged mode inference rate updated to {rate_hz} Hz")
                 
         except Exception as e:
             self.log_message(f"⚠️ Error updating inference rate: {e}")
     
-    def run_inference_cycle(self):
-        """Run a single inference cycle for merged mode"""
+    def run_merged_mode_inference_cycle(self):
+        """Run a single inference cycle for merged mode (DISABLED)"""
+        # ⚠️ DISABLED: This mock inference system generated mathematical patterns (sine/cosine)
+        # that created "G"-like shapes instead of using actual trained ML models.
+        # 
+        # The sine/cosine functions with different frequencies create Lissajous curves
+        # which trace out letter-like patterns including "G" shapes.
+        #
+        # To use REAL model inference instead:
+        # 1. Go to the "🧠 Inference Mode" tab
+        # 2. Select a trained model from the dropdown
+        # 3. Click "Load Model & Start Inference"
+        #
+        # This will load an actual trained PyTorch model and generate predictions
+        # based on learned patterns, not mathematical functions.
+        
+        return  # Early return - mock inference disabled
+        
+        # Original mock inference code below (DISABLED):
         try:
-            if hasattr(self, 'inference_engine') and self.inference_engine:
+            # ONLY run if merged mode inference is explicitly enabled!
+            if not (hasattr(self, 'inference_mode_enabled') and self.inference_mode_enabled):
+                return
+                
+            if hasattr(self, 'merged_mode_inference_engine') and self.merged_mode_inference_engine:
                 # Generate mock prediction data for testing
+                # Use time-varying parameters for variety
+                t = time.time()
                 prediction_data = {
                     'colors': {
-                        'r': 128 + int(50 * math.sin(time.time() * 0.5)),
-                        'g': 128 + int(50 * math.cos(time.time() * 0.7)),
-                        'b': 128 + int(50 * math.sin(time.time() * 0.3)),
+                        'r': 128 + int(50 * math.sin(t * 0.5)),
+                        'g': 128 + int(50 * math.cos(t * 0.7)),
+                        'b': 128 + int(50 * math.sin(t * 0.3)),
                         'alpha': 255
                     },
                     'dials': {
-                        'dial_1': {'value': (math.sin(time.time() * 0.4) + 1) / 2},
-                        'dial_2': {'value': (math.cos(time.time() * 0.6) + 1) / 2}
+                        'dial_1': {'value': (math.sin(t * 0.4) + 1) / 2},
+                        'dial_2': {'value': (math.cos(t * 0.6) + 1) / 2}
                     }
                 }
                 
                 self.on_inference_prediction(prediction_data)
                 
         except Exception as e:
-            self.log_message(f"⚠️ Error in inference cycle: {e}")
+            self.log_message(f"⚠️ Error in merged mode inference cycle: {e}")
     
     def on_inference_prediction(self, prediction_data):
         """Handle inference predictions for recursive recording"""
@@ -2558,7 +2938,7 @@ Description: {config.get('description', 'No description available')}"""
             y = int(dial_2 * self.canvas.height())
             
             # Draw inference prediction as a glowing circle
-            painter = QPainter(self.canvas.layers[self.current_layer])
+            painter = QPainter(self.canvas.pixmap)
             
             # Set up inference brush with glow effect
             inference_color = QColor(r, g, b, alpha)

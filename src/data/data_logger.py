@@ -62,6 +62,7 @@ class SessionMetadata:
     total_drawing_actions: int = 0
     total_rng_samples: int = 0
     total_eeg_samples: int = 0
+    dial_visualization_enabled: bool = False
 
 
 @dataclass
@@ -146,6 +147,12 @@ class DataLogger:
         
         # Create session metadata
         self.session_start_time = time.time()
+        
+        # Extract dial visualization flag from hardware config
+        dial_viz_enabled = False
+        if hardware_config and 'dial_visualization' in hardware_config:
+            dial_viz_enabled = hardware_config['dial_visualization'] == 'Enabled'
+        
         self.session_metadata = SessionMetadata(
             session_id=session_id,
             start_time=self.session_start_time,
@@ -153,7 +160,8 @@ class DataLogger:
             participant_id=participant_id,
             experiment_notes=experiment_notes,
             hardware_config=hardware_config or {},
-            drawing_delay_offset=self.drawing_delay_offset
+            drawing_delay_offset=self.drawing_delay_offset,
+            dial_visualization_enabled=dial_viz_enabled
         )
         
         # Clear buffers
@@ -438,6 +446,7 @@ class DataLogger:
             meta_group.attrs['session_id'] = self.session_metadata.session_id
             meta_group.attrs['start_time'] = self.session_metadata.start_time
             meta_group.attrs['drawing_delay_offset'] = self.session_metadata.drawing_delay_offset
+            meta_group.attrs['dial_visualization_enabled'] = self.session_metadata.dial_visualization_enabled
             
     def _initialize_json_file(self, session_id: str):
         """Initialize JSON file structure"""

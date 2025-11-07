@@ -119,10 +119,12 @@ class ModelInstance:
                 self.lstm = nn.LSTM(input_size, hidden_size, num_layers, 
                                   dropout=dropout_rate, batch_first=True)
                 self.fc = nn.Linear(hidden_size, 1)
+                self.sigmoid = nn.Sigmoid()  # Constrain output to [0, 1]
                 
             def forward(self, x):
                 out, _ = self.lstm(x)
                 out = self.fc(out[:, -1, :])
+                out = self.sigmoid(out)  # Apply sigmoid activation
                 return out
         
         class GRUModel(nn.Module):
@@ -131,10 +133,12 @@ class ModelInstance:
                 self.gru = nn.GRU(input_size, hidden_size, num_layers,
                                 dropout=dropout_rate, batch_first=True)
                 self.fc = nn.Linear(hidden_size, 1)
+                self.sigmoid = nn.Sigmoid()  # Constrain output to [0, 1]
                 
             def forward(self, x):
                 out, _ = self.gru(x)
                 out = self.fc(out[:, -1, :])
+                out = self.sigmoid(out)  # Apply sigmoid activation
                 return out
         
         class TransformerModel(nn.Module):
@@ -147,10 +151,12 @@ class ModelInstance:
                 )
                 self.transformer = nn.TransformerEncoder(encoder_layer, num_layers)
                 self.fc = nn.Linear(input_size, 1)
+                self.sigmoid = nn.Sigmoid()  # Constrain output to [0, 1]
                 
             def forward(self, x):
                 out = self.transformer(x)
                 out = self.fc(out[:, -1, :])
+                out = self.sigmoid(out)  # Apply sigmoid activation
                 return out
         
         class CNNLSTMModel(nn.Module):
@@ -160,6 +166,7 @@ class ModelInstance:
                 self.lstm = nn.LSTM(hidden_size//2, hidden_size, num_layers,
                                   dropout=dropout_rate, batch_first=True)
                 self.fc = nn.Linear(hidden_size, 1)
+                self.sigmoid = nn.Sigmoid()  # Constrain output to [0, 1]
                 
             def forward(self, x):
                 x = x.transpose(1, 2)
@@ -167,6 +174,7 @@ class ModelInstance:
                 x = x.transpose(1, 2)
                 out, _ = self.lstm(x)
                 out = self.fc(out[:, -1, :])
+                out = self.sigmoid(out)  # Apply sigmoid activation
                 return out
         
         # Create model based on architecture

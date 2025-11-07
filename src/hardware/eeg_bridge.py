@@ -20,7 +20,8 @@ import numpy as np
 
 class EEGSourceType(Enum):
     """EEG data source types"""
-    CORTEX = "cortex"
+    CORTEX = "cortex"  # Raw EEG - requires license
+    BCI = "bci"  # FREE Emotiv BCI data (Performance Metrics, Mental Commands, Facial Expressions)
     MOCK = "mock"
     SIMULATED = "simulated"
     LSL = "lsl"  # For future Lab Streaming Layer support
@@ -167,13 +168,18 @@ class EEGBridge:
         requested_source = self.config.get("source", "auto").lower()
         
         if requested_source == "cortex":
-            return [EEGSourceType.CORTEX, EEGSourceType.MOCK, EEGSourceType.SIMULATED]
+            # Raw EEG (requires license) - fallback to BCI then mock
+            return [EEGSourceType.CORTEX, EEGSourceType.BCI, EEGSourceType.MOCK, EEGSourceType.SIMULATED]
+        elif requested_source == "bci":
+            # FREE BCI data (recommended) - fallback to mock
+            return [EEGSourceType.BCI, EEGSourceType.MOCK, EEGSourceType.SIMULATED]
         elif requested_source == "mock":
             return [EEGSourceType.MOCK, EEGSourceType.SIMULATED]
         elif requested_source == "simulated":
             return [EEGSourceType.SIMULATED]
         else:  # auto
-            return [EEGSourceType.CORTEX, EEGSourceType.MOCK, EEGSourceType.SIMULATED]
+            # Default: Try BCI first (free), then cortex (needs license), then mock
+            return [EEGSourceType.BCI, EEGSourceType.CORTEX, EEGSourceType.MOCK, EEGSourceType.SIMULATED]
             
     def _create_source(self, source_type: EEGSourceType) -> EEGSource:
         """Factory method to create EEG sources"""
@@ -182,6 +188,9 @@ class EEGBridge:
         if source_type == EEGSourceType.CORTEX:
             from .cortex_websocket import CortexWebSocketSource
             return CortexWebSocketSource(source_config)
+        elif source_type == EEGSourceType.BCI:
+            from .emotiv_bci import EmotivBCISource
+            return EmotivBCISource(self.config)  # BCI needs full config
         elif source_type == EEGSourceType.MOCK:
             from .mock_eeg import EnhancedMockEEG
             return EnhancedMockEEG(source_config)
@@ -400,6 +409,9 @@ class EEGBridge:
         if source_type == EEGSourceType.CORTEX:
             from .cortex_websocket import CortexWebSocketSource
             return CortexWebSocketSource
+        elif source_type == EEGSourceType.BCI:
+            from .emotiv_bci import EmotivBCISource
+            return EmotivBCISource
         elif source_type == EEGSourceType.MOCK:
             from .mock_eeg import EnhancedMockEEG
             return EnhancedMockEEG
@@ -516,15 +528,40 @@ def load_eeg_config() -> Dict[str, Any]:
         }
     }
     
-    # Try to load from YAML file if available
+    # Try to load from YAML files
     try:
         import yaml
-        config_file = os.path.join(os.path.dirname(__file__), "..", "..", "config", "eeg_config.yaml")
-        if os.path.exists(config_file):
-            with open(config_file, 'r') as f:
+        
+        # First try app_config.yaml (main config with Emotiv credentials)
+        app_config_file = os.path.join(os.path.dirname(__file__), "..", "..", "config", "app_config.yaml")
+        if os.path.exists(app_config_file):
+            with open(app_config_file, 'r') as f:
+                app_config = yaml.safe_load(f)
+                if app_config:
+                    # Extract Emotiv credentials from hardware.emotiv section
+                    emotiv_config = app_config.get('hardware', {}).get('emotiv', {})
+                    if emotiv_config:
+                        # Map emotiv config to cortex config
+                        if emotiv_config.get('client_id'):
+                            config['cortex']['client_id'] = emotiv_config['client_id']
+                        if emotiv_config.get('client_secret'):
+                            config['cortex']['client_secret'] = emotiv_config['client_secret']
+                        if emotiv_config.get('license'):
+                            config['cortex']['license_key'] = emotiv_config['license']
+                        if emotiv_config.get('headset_id'):
+                            config['cortex']['headset_id'] = emotiv_config['headset_id']
+                    
+                    # Also get sampling rate from timing config
+                    sampling_rate = app_config.get('timing', {}).get('eeg_sampling_rate', 128)
+                    config['cortex']['sampling_rate'] = sampling_rate
+        
+        # Then try eeg_config.yaml (specific EEG config that can override)
+        eeg_config_file = os.path.join(os.path.dirname(__file__), "..", "..", "config", "eeg_config.yaml")
+        if os.path.exists(eeg_config_file):
+            with open(eeg_config_file, 'r') as f:
                 file_config = yaml.safe_load(f)
                 if file_config:
-                    # Merge configurations (file overrides environment)
+                    # Merge configurations (file overrides everything)
                     config.update(file_config)
     except ImportError:
         pass  # YAML not available
